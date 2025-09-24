@@ -5,6 +5,9 @@ import dotenv from 'dotenv';
 import './src/config/db.js';
 import authRoutes from './src/routes/auth.js';
 import favRoutes from './src/routes/favorites.js';
+import favoritesRoutes from "./routes/favorites.js";
+
+app.use("/favorites", favoritesRoutes);
 
 dotenv.config();
 
