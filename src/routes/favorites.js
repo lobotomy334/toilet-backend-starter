@@ -1,12 +1,12 @@
 import express from "express";
 import Favorite from "../models/Favorite.js";
-import { authRequired } from "../middleware/auth.js"; // ✅ verifyToken → authRequired
+import { authRequired } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 키 생성 규칙 (프론트와 반드시 동일해야 함)
+// 프론트와 동일하게 맞춰야 하는 key 생성 규칙
 const toKey = (t) =>
-  t.id ?? `${t.name}|${t.lat.toFixed(6)},${t.lng.toFixed(6)}`;
+  t.id ?? `${t.name}|${Number(t.lat).toFixed(6)},${Number(t.lng).toFixed(6)}`;
 
 /**
  * POST /favorites/batch
@@ -15,7 +15,22 @@ const toKey = (t) =>
  */
 router.post("/batch", authRequired, async (req, res) => {
   const userId = req.user.id || req.user._id;
-  const { adds = [], removes = [] } = req.body || {};
+  let { adds = [], removes = [] } = req.body || {};
+
+  // 방어적 정규화
+  const normalize = (t) => ({
+    id: t.id ?? null,
+    name: String(t.name ?? "").trim(),
+    lat: Number.parseFloat(t.lat),
+    lng: Number.parseFloat(t.lng),
+  });
+
+  adds = Array.isArray(adds)
+    ? adds.map(normalize).filter((t) => t.name && Number.isFinite(t.lat) && Number.isFinite(t.lng))
+    : [];
+  removes = Array.isArray(removes)
+    ? removes.map(normalize).filter((t) => t.name && Number.isFinite(t.lat) && Number.isFinite(t.lng))
+    : [];
 
   const ops = [];
 
@@ -29,13 +44,7 @@ router.post("/batch", authRequired, async (req, res) => {
           $set: {
             userId,
             key: k,
-            toilet: {
-              id: t.id ?? null,
-              name: t.name,
-              lat: t.lat,
-              lng: t.lng,
-            },
-            updatedAt: new Date(),
+            toilet: { id: t.id, name: t.name, lat: t.lat, lng: t.lng },
           },
           $setOnInsert: { createdAt: new Date() },
         },
@@ -52,10 +61,16 @@ router.post("/batch", authRequired, async (req, res) => {
 
   try {
     if (!ops.length) {
-      return res.json({ success: true, result: "nothing to do" });
+      return res.json({ success: true, upserted: 0, modified: 0, deleted: 0 });
     }
+
     const result = await Favorite.bulkWrite(ops, { ordered: false });
-    res.json({ success: true, result });
+    res.json({
+      success: true,
+      upserted: result.upsertedCount ?? 0,
+      modified: result.modifiedCount ?? 0,
+      deleted: result.deletedCount ?? 0,
+    });
   } catch (e) {
     console.error("favorites/batch error", e);
     res.status(500).json({ success: false, error: e.message });
