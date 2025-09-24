@@ -1,20 +1,20 @@
-// routes/favorites.js
 import express from "express";
 import Favorite from "../models/Favorite.js";
-import { verifyToken } from "../middleware/auth.js"; // 프로젝트에 맞게 경로 확인
+import { authRequired } from "../middleware/auth.js"; // ✅ verifyToken → authRequired
 
 const router = express.Router();
 
-// 클라이언트와 동일한 키 규칙
-const toKey = (t) => t.id ?? `${t.name}|${t.lat.toFixed(6)},${t.lng.toFixed(6)}`;
+// 키 생성 규칙 (프론트와 반드시 동일해야 함)
+const toKey = (t) =>
+  t.id ?? `${t.name}|${t.lat.toFixed(6)},${t.lng.toFixed(6)}`;
 
 /**
  * POST /favorites/batch
  * body: { adds: ToiletLite[], removes: ToiletLite[] }
  * ToiletLite = { id?: string, name: string, lat: number, lng: number }
  */
-router.post("/batch", verifyToken, async (req, res) => {
-  const userId = req.user.id || req.user._id; // jwt 페이로드에 따라 조정
+router.post("/batch", authRequired, async (req, res) => {
+  const userId = req.user.id || req.user._id;
   const { adds = [], removes = [] } = req.body || {};
 
   const ops = [];
@@ -29,7 +29,12 @@ router.post("/batch", verifyToken, async (req, res) => {
           $set: {
             userId,
             key: k,
-            toilet: { id: t.id ?? null, name: t.name, lat: t.lat, lng: t.lng },
+            toilet: {
+              id: t.id ?? null,
+              name: t.name,
+              lat: t.lat,
+              lng: t.lng,
+            },
             updatedAt: new Date(),
           },
           $setOnInsert: { createdAt: new Date() },
@@ -46,32 +51,37 @@ router.post("/batch", verifyToken, async (req, res) => {
   }
 
   try {
-    if (!ops.length) return res.json({ success: true, result: "nothing to do" });
-
+    if (!ops.length) {
+      return res.json({ success: true, result: "nothing to do" });
+    }
     const result = await Favorite.bulkWrite(ops, { ordered: false });
-    return res.json({ success: true, result });
+    res.json({ success: true, result });
   } catch (e) {
     console.error("favorites/batch error", e);
-    return res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
 /**
  * GET /favorites
- * 사용자의 즐겨찾기 목록 반환 (선택)
+ * 사용자의 즐겨찾기 목록 반환
  */
-router.get("/", verifyToken, async (req, res) => {
+router.get("/", authRequired, async (req, res) => {
   const userId = req.user.id || req.user._id;
-  const docs = await Favorite.find({ userId }).lean();
-  res.json({
-    success: true,
-    items: docs.map((d) => ({
-      key: d.key,
-      toilet: d.toilet,
-      createdAt: d.createdAt,
-      updatedAt: d.updatedAt,
-    })),
-  });
+  try {
+    const docs = await Favorite.find({ userId }).lean();
+    res.json({
+      success: true,
+      items: docs.map((d) => ({
+        key: d.key,
+        toilet: d.toilet,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 export default router;
