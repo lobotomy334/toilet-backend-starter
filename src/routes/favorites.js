@@ -1,19 +1,37 @@
-// src/routes/favorites.js (완성본 예시)
+// src/routes/favorites.js
 import express from "express";
 import Favorite from "../models/Favorite.js";
 import { authRequired } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 프론트와 동일하게 맞춰야 하는 key 생성 규칙
+// 프론트와 동일 규칙: id가 있으면 id, 없으면 name|lat,lng
 const toKey = (t) =>
-  t?.id ?? `${t?.name}|${Number(t?.lat).toFixed(6)},${Number(t?.lng).toFixed(6)}`;
+  (t && t.id) ??
+  `${t?.name ?? ""}|${Number(t?.lat).toFixed(6)},${Number(t?.lng).toFixed(6)}`;
 
-// GET /favorites  (내 즐겨찾기 목록)
+// 입력값 정리 + 검증
+function normalizeToilet(x = {}) {
+  const name = typeof x.name === "string" ? x.name.trim() : "";
+  const lat = Number(x.lat);
+  const lng = Number(x.lng);
+  const address = typeof x.address === "string" ? x.address.trim() : undefined;
+
+  if (!name) throw new Error("Invalid payload: name required");
+  if (!Number.isFinite(lat) || !Number.isFinite(lng))
+    throw new Error("Invalid payload: lat/lng must be finite numbers");
+
+  return { id: x.id ?? null, name, lat, lng, address };
+}
+
+// GET /favorites
 router.get("/", authRequired, async (req, res) => {
   try {
-    const docs = await Favorite.find({ userId: req.user.id }).sort({ updatedAt: -1 }).lean();
-    res.json({
+    const docs = await Favorite.find({ userId: req.user.id })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    return res.json({
       success: true,
       items: docs.map((d) => ({
         key: d.key,
@@ -23,7 +41,10 @@ router.get("/", authRequired, async (req, res) => {
       })),
     });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    console.error("[favorites:get] error:", e);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to load favorites", error: e.message });
   }
 });
 
@@ -33,10 +54,16 @@ router.get("/", authRequired, async (req, res) => {
  * ToiletLite = { id?: string, name: string, lat: number, lng: number, address?: string }
  */
 router.post("/batch", authRequired, async (req, res) => {
-  const { adds = [], removes = [] } = req.body || {};
   try {
-    // 추가
-    for (const t of adds) {
+    const adds = Array.isArray(req.body?.adds) ? req.body.adds : [];
+    const removes = Array.isArray(req.body?.removes) ? req.body.removes : [];
+
+    // 1) 유효성/정규화
+    const safeAdds = adds.map(normalizeToilet);
+    const safeRemoves = removes.map(normalizeToilet);
+
+    // 2) upsert & delete
+    for (const t of safeAdds) {
       const key = toKey(t);
       await Favorite.updateOne(
         { userId: req.user.id, key },
@@ -46,22 +73,26 @@ router.post("/batch", authRequired, async (req, res) => {
           toilet: {
             id: t.id,
             name: t.name,
-            lat: Number(t.lat),
-            lng: Number(t.lng),
+            lat: t.lat,
+            lng: t.lng,
             address: t.address,
           },
         },
         { upsert: true }
       );
     }
-    // 삭제
-    for (const t of removes) {
+
+    for (const t of safeRemoves) {
       const key = toKey(t);
       await Favorite.deleteOne({ userId: req.user.id, key });
     }
 
-    const docs = await Favorite.find({ userId: req.user.id }).sort({ updatedAt: -1 }).lean();
-    res.json({
+    // 3) 최신 목록 반환
+    const docs = await Favorite.find({ userId: req.user.id })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    return res.json({
       success: true,
       items: docs.map((d) => ({
         key: d.key,
@@ -71,7 +102,10 @@ router.post("/batch", authRequired, async (req, res) => {
       })),
     });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    console.error("[favorites:batch] error:", e);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to batch update favorites", error: e.message });
   }
 });
 
