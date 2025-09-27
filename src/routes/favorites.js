@@ -65,21 +65,31 @@ router.post("/batch", authRequired, async (req, res) => {
     // 2) upsert & delete
     for (const t of safeAdds) {
       const key = toKey(t);
-      await Favorite.updateOne(
-        { userId: req.user.id, key },
-        {
-          userId: req.user.id,
-          key,
-          toilet: {
-            id: t.id,
-            name: t.name,
-            lat: t.lat,
-            lng: t.lng,
-            address: t.address,
+      try {
+        await Favorite.updateOne(
+          { userId: req.user.id, key }, // ✅ key 기반
+          {
+            userId: req.user.id,
+            key,
+            toilet: {
+              id: t.id ?? null,
+              name: t.name,
+              lat: t.lat,
+              lng: t.lng,
+              address: t.address,
+            },
           },
-        },
-        { upsert: true }
-      );
+          { upsert: true }
+        );
+      } catch (err) {
+        // ✅ 인덱스 전환 중/중복 상황에서도 500으로 안 떨어지게
+        if (err && err.code === 11000) {
+          // 이미 존재 → 무시
+          console.warn("[favorites:batch] duplicate ignored:", key);
+        } else {
+          throw err;
+        }
+      }
     }
 
     for (const t of safeRemoves) {
