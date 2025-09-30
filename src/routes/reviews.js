@@ -1,6 +1,6 @@
 // src/routes/reviews.js
 import express from "express";
-import Review from "../models/Review.js";
+import Review from "../models/reviews.js";
 import { authRequired } from "../middleware/auth.js";
 
 const router = express.Router();
