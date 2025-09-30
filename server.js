@@ -8,7 +8,7 @@ import "./src/config/db.js";
 
 import favoritesRoutes from "./src/routes/favorites.js";
 import authRoutes from "./src/routes/auth.js";
-import reviewsRouter from "./routes/reviews.js";
+import reviewsRouter from "./src/routes/reviews.js";
 dotenv.config();
 
 const app = express();
