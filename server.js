@@ -8,7 +8,7 @@ import "./src/config/db.js";
 
 import favoritesRoutes from "./src/routes/favorites.js";
 import authRoutes from "./src/routes/auth.js";
-
+import reviewsRouter from "./routes/reviews.js";
 dotenv.config();
 
 const app = express();
@@ -21,6 +21,7 @@ app.get("/health", (_, res) => res.json({ ok: true }));
 
 app.use("/auth", authRoutes);
 app.use("/favorites", favoritesRoutes);
+app.use("/", reviewsRouter);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
